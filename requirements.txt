@@ -1,0 +1,3 @@
+mcp
+alpaca-py
+python-dotenv
