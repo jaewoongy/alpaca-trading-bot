@@ -10,6 +10,9 @@ from alpaca.data.requests import StockLatestQuoteRequest
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
+from pipeline import screen_watchlist
+from signals.technicals import get_technicals_signal
+
 load_dotenv()
 
 ALPACA_API_KEY = os.environ["ALPACA_API_KEY"]
@@ -22,7 +25,7 @@ data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
 
 WATCHLIST_PATH = Path(__file__).parent / "watchlist.json"
 
-mcp = FastMCP("alpaca-paper-trading")
+mcp = FastMCP("alpaca-paper-trading", stateless_http=True, host="0.0.0.0", port=8000)
 
 
 def load_watchlist() -> list[str]:
@@ -57,6 +60,50 @@ def get_quotes(symbols: list[str] | None = None) -> str:
     return "\n".join(
         f"{symbol}: bid=${quotes[symbol].bid_price} ask=${quotes[symbol].ask_price}"
         for symbol in symbols
+    )
+
+
+@mcp.tool()
+def screen_technicals(symbols: list[str] | None = None) -> str:
+    """Screen symbols for a non-neutral technical signal (bullish/bearish).
+
+    Cheap, deterministic filter based on SMA/RSI/MACD/volume - no LLM
+    judgment involved. Use this first to narrow down which symbols are
+    worth investigating further with news/sentiment before deciding.
+
+    Args:
+        symbols: Tickers to screen. Defaults to the saved watchlist if omitted.
+    """
+    symbols = [s.upper() for s in (symbols or load_watchlist())]
+    shortlist = screen_watchlist(data_client, symbols)
+    if not shortlist:
+        return "No symbols cleared the technicals filter."
+    lines = []
+    for entry in shortlist:
+        technicals = entry.signals[0]
+        lines.append(
+            f"{entry.symbol}: {technicals.signal} (confidence={technicals.confidence}) "
+            f"- {technicals.rationale}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def get_technicals(symbol: str) -> str:
+    """Get the technical indicator signal for a single stock symbol.
+
+    Computes SMA/RSI/MACD/volume from recent hourly bars and classifies
+    the result as bullish, bearish, or neutral, with the underlying
+    indicator values included for the caller's own judgment.
+
+    Args:
+        symbol: Stock ticker, e.g. AAPL.
+    """
+    signal = get_technicals_signal(data_client, symbol.upper())
+    return (
+        f"{symbol.upper()}: {signal.signal} (confidence={signal.confidence})\n"
+        f"details: {signal.details}\n"
+        f"rationale: {signal.rationale}"
     )
 
 
@@ -143,4 +190,4 @@ def list_orders() -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http")

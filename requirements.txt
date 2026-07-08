@@ -1,3 +1,5 @@
 mcp
 alpaca-py
 python-dotenv
+pandas
+ta
