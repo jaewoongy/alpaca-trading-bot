@@ -184,9 +184,20 @@ def list_orders() -> str:
     if not orders:
         return "No orders."
     return "\n".join(
-        f"{o.symbol}: {o.side} qty={o.qty}, status={o.status}, submitted_at={o.submitted_at}"
+        f"{o.id}: {o.symbol} {o.side} qty={o.qty}, status={o.status}, submitted_at={o.submitted_at}"
         for o in orders
     )
+
+
+@mcp.tool()
+def cancel_order(order_id: str) -> str:
+    """Cancel a single open order by its ID.
+
+    Args:
+        order_id: The order ID, as shown by list_orders.
+    """
+    trading_client.cancel_order_by_id(order_id)
+    return f"Order {order_id} canceled."
 
 
 if __name__ == "__main__":
